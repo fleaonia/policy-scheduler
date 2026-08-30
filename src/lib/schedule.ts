@@ -1,4 +1,4 @@
-import type { Policy, PolicyOccurrence } from '../types';
+import type { CollisionPair, Policy, PolicyOccurrence } from '../types';
 import {
   addHours,
   combineDateAndTime,
@@ -18,41 +18,53 @@ function occurrenceDatesInRange(policy: Policy, rangeStart: Date, rangeEnd: Date
   return days.map((d) => combineDateAndTime(d, s.time));
 }
 
-function targetGroupsOverlap(a: Policy, b: Policy): boolean {
-  return a.targetGroups.some((g) => b.targetGroups.includes(g));
+function sharedTargetGroups(a: Policy, b: Policy): string[] {
+  return a.targetGroups.filter((g) => b.targetGroups.includes(g));
 }
 
 function windowsOverlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
   return aStart < bEnd && bStart < aEnd;
 }
 
+export interface PolicySchedule {
+  occurrences: PolicyOccurrence[];
+  collisions: CollisionPair[];
+}
+
 /**
  * Expands every policy into its concrete occurrences within [rangeStart, rangeEnd],
- * then flags any occurrence whose blackout window overlaps another occurrence
- * that shares at least one target group.
+ * then finds every pair whose blackout windows overlap on a shared target group.
+ * Each occurrence's `hasCollision` is true iff it appears in at least one pair.
  */
-export function buildOccurrences(
-  policies: Policy[],
-  rangeStart: Date,
-  rangeEnd: Date,
-): PolicyOccurrence[] {
-  const raw: Omit<PolicyOccurrence, 'hasCollision'>[] = [];
+export function buildSchedule(policies: Policy[], rangeStart: Date, rangeEnd: Date): PolicySchedule {
+  const bare: Omit<PolicyOccurrence, 'hasCollision'>[] = [];
 
   for (const policy of policies) {
     for (const start of occurrenceDatesInRange(policy, rangeStart, rangeEnd)) {
       const windowHours = Math.max(MIN_RUN_WINDOW_HOURS, policy.deferralHours);
-      raw.push({ policy, start, blackoutEnd: addHours(start, windowHours) });
+      bare.push({ policy, start, blackoutEnd: addHours(start, windowHours) });
     }
   }
 
-  return raw.map((occ, i) => {
-    const hasCollision = raw.some((other, j) => {
-      if (i === j) return false;
-      if (!targetGroupsOverlap(occ.policy, other.policy)) return false;
-      return windowsOverlap(occ.start, occ.blackoutEnd, other.start, other.blackoutEnd);
-    });
-    return { ...occ, hasCollision };
-  });
+  const occurrences: PolicyOccurrence[] = bare.map((occ) => ({ ...occ, hasCollision: false }));
+  const collisions: CollisionPair[] = [];
+
+  for (let i = 0; i < occurrences.length; i++) {
+    for (let j = i + 1; j < occurrences.length; j++) {
+      const a = occurrences[i];
+      const b = occurrences[j];
+      const sharedGroups = sharedTargetGroups(a.policy, b.policy);
+      if (!sharedGroups.length) continue;
+      if (!windowsOverlap(a.start, a.blackoutEnd, b.start, b.blackoutEnd)) continue;
+
+      a.hasCollision = true;
+      b.hasCollision = true;
+      collisions.push({ a, b, sharedGroups });
+    }
+  }
+
+  collisions.sort((x, y) => x.a.start.getTime() - y.a.start.getTime());
+  return { occurrences, collisions };
 }
 
 export function isDeferralActiveAt(occurrence: PolicyOccurrence, at: Date): boolean {

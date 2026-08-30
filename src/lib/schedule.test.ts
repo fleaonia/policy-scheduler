@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOccurrences } from './schedule';
+import { buildSchedule } from './schedule';
 import { nthWeekdayOccurrencesInRange } from './dates';
 import { seedPolicies } from '../data/seedPolicies';
 import type { Policy } from '../types';
@@ -17,11 +17,12 @@ describe('nthWeekdayOccurrencesInRange (Patch Tuesday)', () => {
   });
 });
 
-describe('buildOccurrences', () => {
+describe('buildSchedule', () => {
   it('expands the seed schedule with no collisions (different days, same target group)', () => {
-    const occurrences = buildOccurrences(seedPolicies, RANGE_START, RANGE_END);
+    const { occurrences, collisions } = buildSchedule(seedPolicies, RANGE_START, RANGE_END);
     expect(occurrences.length).toBeGreaterThan(0);
     expect(occurrences.every((o) => !o.hasCollision)).toBe(true);
+    expect(collisions).toHaveLength(0);
   });
 
   it('flags a collision when two policies with an overlapping target group land in the same window', () => {
@@ -50,9 +51,11 @@ describe('buildOccurrences', () => {
       },
     ];
 
-    const occurrences = buildOccurrences(policies, RANGE_START, RANGE_END);
-    expect(occurrences.some((o) => o.hasCollision)).toBe(true);
+    const { occurrences, collisions } = buildSchedule(policies, RANGE_START, RANGE_END);
     expect(occurrences.every((o) => o.hasCollision)).toBe(true);
+    expect(collisions).toHaveLength(1);
+    expect(collisions[0].sharedGroups).toEqual(['All Computers']);
+    expect([collisions[0].a.policy.id, collisions[0].b.policy.id].sort()).toEqual(['a', 'b']);
   });
 
   it('does not flag a collision when target groups do not overlap', () => {
@@ -81,7 +84,8 @@ describe('buildOccurrences', () => {
       },
     ];
 
-    const occurrences = buildOccurrences(policies, RANGE_START, RANGE_END);
+    const { occurrences, collisions } = buildSchedule(policies, RANGE_START, RANGE_END);
     expect(occurrences.every((o) => !o.hasCollision)).toBe(true);
+    expect(collisions).toHaveLength(0);
   });
 });

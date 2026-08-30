@@ -55,11 +55,28 @@ the app's collision engine is watching that group for any accidental overlap.
   policies are intentionally not draggable in this first cut — moving a
   monthly cadence to an arbitrary day needs a one-off exception model this
   version doesn't build yet; edit its deferral from the side panel instead.
+- **Collision notifications** — a banner across the top of the app lists every
+  active collision (which two policies, which shared target group, when),
+  looking 8 weeks ahead regardless of which day/week/month you're currently
+  viewing. Click an entry to jump straight to that occurrence. See
+  `src/components/CollisionBanner.tsx`.
 
-## Importing policies
+## Importing policies from production Automox
 
-Click **Import policies** and either paste JSON or upload a `.json` file. Two
-shapes are accepted:
+Click **Import policies** and either paste JSON or upload a `.json` file. There
+are two ways to get bulk JSON out of Automox itself:
+
+1. **Automox API** — `GET https://console.automox.com/api/policies?o=<org_id>`
+   (paginate with `?page=`/`limit=` if you have more than one page's worth)
+   returns every policy as JSON. Automox also publishes a
+   [PowerShell script](https://help.automox.com/hc/en-us/articles/5351963440532-Retrieve-Policy-List-and-Schedules-Using-PowerShell)
+   that does this same pull if you'd rather not hit the API by hand.
+2. Paste the **entire response body** into the import box — array, or
+   wrapped in `{ "policies": [...] }` / `{ "data": [...] }` (both common
+   list-endpoint envelopes), it's auto-unwrapped. All policies in it import in
+   one shot; you don't need to split it up per-policy.
+
+The importer accepts two shapes:
 
 **Native schema** (recommended for hand-written policies):
 
@@ -81,14 +98,19 @@ shapes are accepted:
 `schedule.type` is `"weekly"` (`dayOfWeek` 0=Sun..6=Sat) or `"nth_weekday"`
 (`dayOfWeek` + `nth`, e.g. Patch Tuesday = `{ "dayOfWeek": 2, "nth": 2 }`).
 
-**Automox policy export** — a loose subset of the real
-[`POST /policies`](https://docs.automox.com/api/policies/create-a-new-policy)
-body is recognized automatically (detected by the presence of `schedule_days`):
-`name`, `policy_type_name`, `schedule_days` (7-digit binary, Sun-first),
-`schedule_weeks_of_month` (5-digit binary, 5th-week-first — used to detect a
-2nd-week/Patch-Tuesday cadence), `schedule_time`, `notify_user`,
-`deferral_minutes` / `custom_notification_deferment_periods`, and
-`groups`/`device_groups`. See `src/lib/importPolicies.ts`.
+**Automox policy export** — recognized automatically (detected by the presence
+of `schedule_days`, checked both at the top level and nested under
+`configuration`, since that's where Automox's real `GET /policies` response
+puts most scheduling/behavior fields): `name`, `policy_type_name`,
+`schedule_days` (7-digit binary, Sun-first), `schedule_weeks_of_month`
+(5-digit binary, 5th-week-first — used to detect a 2nd-week/Patch-Tuesday
+cadence), `schedule_time`, `notify_user`, `deferral_minutes` /
+`custom_notification_deferment_periods`, and
+`groups`/`device_groups`/`device_filters`. See `src/lib/importPolicies.ts`.
+Anything Automox sends that this loose adapter doesn't recognize falls back to
+sane defaults (weekly, 9am, "All Computers") rather than failing the whole
+batch — check each imported policy's card in the side panel against your
+source data after a big import.
 
 ## Automox best-practice notes baked into the seed schedule
 
@@ -113,9 +135,10 @@ src/
   data/seedPolicies.ts   the starting weekly cadence described above
   lib/dates.ts           calendar grid + weekday/nth-weekday date math
   lib/schedule.ts        occurrence expansion + blackout/collision detection
-  lib/importPolicies.ts  native + Automox-shaped JSON import
+  lib/importPolicies.ts  native + Automox-shaped JSON import (single, array, or enveloped)
   lib/categoryStyle.ts   sage/off-white category color mapping
-  components/            Header, MonthView, WeekView, PolicyChip, Sidebar, ImportModal
+  components/            Header, MonthView, WeekView, PolicyChip, Sidebar,
+                          ImportModal, CollisionBanner
   App.tsx                state + layout
 ```
 

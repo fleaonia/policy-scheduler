@@ -41,3 +41,10 @@ export interface PolicyOccurrence {
   blackoutEnd: Date;
   hasCollision: boolean;
 }
+
+/** Two occurrences whose blackout windows overlap on at least one shared target group. */
+export interface CollisionPair {
+  a: PolicyOccurrence;
+  b: PolicyOccurrence;
+  sharedGroups: string[];
+}
